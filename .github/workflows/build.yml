@@ -1,0 +1,62 @@
+name: Build 8188eu.ko
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3
+
+      - name: Setup Repo & Download GKI 5.10 Kernel Source
+        run: |
+          mkdir -p ~/android-kernel && cd ~/android-kernel
+          curl https://googleapis.com > ~/repo
+          chmod a+x ~/repo
+          git config --global user.name "Builder"
+          git config --global user.email "builder@example.com"
+          ~/repo init -u https://googlesource.com -b common-android12-5.10 --depth=1
+          ~/repo sync -c -j$(nproc) --no-tags
+
+      - name: Checkout Exact Commit & Prepare Kernel
+        run: |
+          cd ~/android-kernel/common
+          git fetch --unshallow || true
+          git fetch origin 71f3aedc8b92 || true
+          git checkout 71f3aedc8b92 || echo "Using branch tip"
+          sed -i 's/CONFIG_LOCALVERSION=""/CONFIG_LOCALVERSION="-android12-9-00006-g71f3aedc8b92-ab14427738"/g' arch/arm64/configs/gki_defconfig || true
+
+      - name: Build Kernel & Prepare Modules
+        run: |
+          cd ~/android-kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=$PWD/prebuilts/clang/host/linux-x86/clang-r416183b/bin/clang
+          export PATH=$PWD/prebuilts/clang/host/linux-x86/clang-r416183b/bin:$PWD/build/build-tools/path/linux-x86:$PATH
+          cd common
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          ./scripts/config --file out/.config --set-str LOCALVERSION "-android12-9-00006-g71f3aedc8b92-ab14427738"
+          ./scripts/config --file out/.config -d LOCALVERSION_AUTO
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc) modules_prepare
+
+      - name: Clone & Build RTL8188EUS Driver
+        run: |
+          cd ~
+          git clone https://github.com
+          cd rtl8188eus
+          sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/g' Makefile
+          sed -i 's/CONFIG_PLATFORM_ARM64_GENERIC = n/CONFIG_PLATFORM_ARM64_GENERIC = y/g' Makefile
+          sed -i 's/CONFIG_POWER_SAVING = y/CONFIG_POWER_SAVING = n/g' Makefile
+          export KDIR=~/android-kernel/common/out
+          export PATH=~/android-kernel/prebuilts/clang/host/linux-x86/clang-r416183b/bin:~/android-kernel/build/build-tools/path/linux-x86:$PATH
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 KSRC=$KDIR -j$(nproc)
+
+      - name: Upload 8188eu.ko
+        uses: actions/upload-artifact@v4
+        with:
+          name: 8188eu-module-5.10.236
+          path: ~/rtl8188eus/8188eu.ko
