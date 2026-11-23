@@ -15,11 +15,11 @@ jobs:
       - name: Setup Repo & Download GKI 5.10 Kernel Source
         run: |
           mkdir -p ~/android-kernel && cd ~/android-kernel
-          curl https://googleapis.com > ~/repo
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           git config --global user.name "Builder"
           git config --global user.email "builder@example.com"
-          ~/repo init -u https://googlesource.com -b common-android12-5.10 --depth=1
+          ~/repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
           ~/repo sync -c -j$(nproc) --no-tags
 
       - name: Checkout Exact Commit & Prepare Kernel
